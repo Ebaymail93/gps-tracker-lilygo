@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "dev": "npx tsx server/index.ts",
+    "build": "vite build --config vite.config.production.js && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outfile=dist-server/index.js",
+    "start": "node dist-server/index.js",
+    "db:init": "npx tsx server/db-init.ts",
+    "db:migrate": "npx drizzle-kit push"
+  }
+}

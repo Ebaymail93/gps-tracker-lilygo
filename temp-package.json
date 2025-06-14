@@ -1,0 +1,1 @@
+{"scripts":{"dev":"npx tsx server/index.ts"}}

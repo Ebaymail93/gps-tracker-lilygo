@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(222.2, 84%, 4.9%);
+  --muted: hsl(210, 40%, 96%);
+  --muted-foreground: hsl(215.4, 16.3%, 46.9%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(222.2, 84%, 4.9%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(222.2, 84%, 4.9%);
+  --border: hsl(214.3, 31.8%, 91.4%);
+  --input: hsl(214.3, 31.8%, 91.4%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(210, 40%, 98%);
+  --secondary: hsl(210, 40%, 96%);
+  --secondary-foreground: hsl(222.2, 84%, 4.9%);
+  --accent: hsl(210, 40%, 96%);
+  --accent-foreground: hsl(222.2, 84%, 4.9%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(210, 40%, 98%);
+  --ring: hsl(222.2, 84%, 4.9%);
+  --radius: 0.5rem;
+
+  /* Custom GPS Tracker Theme Colors */
+  --gps-primary: hsl(207, 90%, 54%);
+  --gps-secondary: hsl(122, 39%, 49%);
+  --gps-accent: hsl(30, 100%, 49%);
+  --gps-surface: hsl(0, 0%, 100%);
+  --gps-background: hsl(210, 40%, 98%);
+  --gps-gray-100: hsl(210, 40%, 96%);
+  --gps-gray-200: hsl(214.3, 31.8%, 91.4%);
+}
+
+.dark {
+  --background: hsl(0, 0%, 7.1%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(0, 0%, 11.8%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(0, 0%, 11.8%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(0, 0%, 11.8%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(207, 90%, 54%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(0, 0%, 11.8%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(0, 0%, 11.8%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+    background-color: var(--gps-background);
+    color: hsl(222.2, 84%, 4.9%);
+  }
+}
+
+/* Custom GPS Tracker Styles */
+.gps-primary {
+  color: var(--gps-primary);
+}
+
+.bg-gps-primary {
+  background-color: var(--gps-primary);
+}
+
+.gps-secondary {
+  color: var(--gps-secondary);
+}
+
+.bg-gps-secondary {
+  background-color: var(--gps-secondary);
+}
+
+.gps-accent {
+  color: var(--gps-accent);
+}
+
+.bg-gps-accent {
+  background-color: var(--gps-accent);
+}
+
+.bg-gps-surface {
+  background-color: var(--gps-surface);
+}
+
+.bg-gps-gray-850 {
+  background-color: var(--gps-gray-850);
+}
+
+.bg-gps-gray-750 {
+  background-color: var(--gps-gray-750);
+}
+
+/* Leaflet map styling for light theme */
+.leaflet-container {
+  background-color: var(--gps-gray-100);
+}
+
+.leaflet-control-container .leaflet-control {
+  background-color: var(--gps-surface);
+  border: 1px solid var(--gps-gray-200);
+}
+
+.leaflet-control-container .leaflet-control a {
+  background-color: var(--gps-surface);
+  color: hsl(222.2, 84%, 4.9%);
+}
+
+.leaflet-control-container .leaflet-control a:hover {
+  background-color: var(--gps-gray-100);
+}
+
+/* Mobile bottom navigation */
+.mobile-nav {
+  @apply fixed bottom-0 left-0 right-0 bg-gps-surface border-t border-gray-700 lg:hidden;
+}
+
+/* Pulse animation for connection status */
+@keyframes pulse-gps {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-gps {
+  animation: pulse-gps 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Scrollbar styling */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: var(--gps-gray-850);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--gps-gray-750);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(240, 3.7%, 25%);
+}
