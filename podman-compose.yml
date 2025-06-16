@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: gps_tracker_db
+    environment:
+      POSTGRES_DB: gps_tracker
+      POSTGRES_USER: gps_user
+      POSTGRES_PASSWORD: gps_secure_password_2024
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gps_user -d gps_tracker"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gps_network
+
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: gps_tracker_app
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://gps_user:gps_secure_password_2024@postgres:5432/gps_tracker
+      SESSION_SECRET: gps_tracker_raspberry_pi_session_secret_2024_secure
+      PORT: 3000
+      HOST: 0.0.0.0
+      TZ: Europe/Rome
+      # Raspberry Pi optimizations
+      UV_THREADPOOL_SIZE: 4
+      NODE_OPTIONS: "--max-old-space-size=512"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - gps_network
+    # Resource limits for Raspberry Pi
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  nginx:
+    image: nginx:alpine
+    container_name: gps_tracker_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - gps_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  gps_network:
+    driver: bridge

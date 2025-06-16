@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  gps-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile.raspberry
+    container_name: gps-tracker-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - SESSION_SECRET=${SESSION_SECRET:-gps-tracker-secret-key-raspberry}
+      - PORT=3000
+    depends_on:
+      - postgres
+    networks:
+      - gps-network
+    volumes:
+      - ./logs:/app/logs
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: gps-tracker-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=gps_tracker
+      - POSTGRES_USER=gps_user
+      - POSTGRES_PASSWORD=gps_secure_password
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    networks:
+      - gps-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: gps-tracker-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - gps-tracker
+    networks:
+      - gps-network
+
+volumes:
+  postgres_data:
+
+networks:
+  gps-network:
+    driver: bridge

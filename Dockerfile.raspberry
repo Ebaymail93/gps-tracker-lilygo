@@ -1,0 +1,82 @@
+# Multi-stage build for Raspberry Pi 4 (ARM64) - Fixed Dependencies
+FROM node:20-slim AS base
+
+# Install dependencies needed for native modules
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json ./
+
+# Install all dependencies for build stage
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Build frontend only
+RUN npm run build:frontend
+
+# Production stage
+FROM node:20-slim AS production
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    dumb-init \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create app user with home directory and proper permissions
+RUN groupadd -r appuser && useradd -r -g appuser -m appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser
+
+WORKDIR /app
+
+# Copy package files from base stage
+COPY --from=base /app/package.json ./
+
+# Install all dependencies (production + dev) to avoid missing packages
+RUN npm install && \
+    npm cache clean --force
+
+# Copy built frontend from base stage
+COPY --from=base --chown=appuser:appuser /app/dist ./dist
+
+# Copy server source files (non compilato)
+COPY --chown=appuser:appuser server ./server
+COPY --chown=appuser:appuser shared ./shared
+COPY --chown=appuser:appuser drizzle.config.ts ./
+COPY --chown=appuser:appuser tsconfig.json ./
+
+# Create necessary directories
+RUN mkdir -p /app/logs /app/uploads && \
+    chown -R appuser:appuser /app/logs /app/uploads
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Use dumb-init for proper signal handling
+ENTRYPOINT ["dumb-init", "--"]
+
+# Start the application con tsx
+CMD ["./node_modules/.bin/tsx", "server/index.ts"]
