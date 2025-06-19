@@ -6,6 +6,22 @@ import connectPg from "connect-pg-simple";
 import bcrypt from "bcrypt";
 import { storage } from "./storage";
 
+import { User as DbUser } from '@shared/schema';
+
+declare global {
+  namespace Express {
+    interface User {
+      id: string;
+      email: string;
+      role: string;
+      firstName?: string;
+      lastName?: string;
+    }
+  }
+}
+
+
+
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   const pgStore = connectPg(session);

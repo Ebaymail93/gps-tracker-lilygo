@@ -15,214 +15,176 @@ import {
   DeviceStatus,
 } from "@shared/schema";
 
+
 const router = Router();
 
 // Health Check Endpoint for Raspberry Pi monitoring
-router.get("/api/health", async (req: Request, res: Response) => {
+router.get('/api/health', async (req: Request, res: Response) => {
   try {
     // Check database connection
     const dbCheck = await storage.getAllDevices();
-    
+
     // System info
     const healthStatus = {
-      status: "healthy",
+      status: 'healthy',
       timestamp: new Date().toISOString(),
-      database: "connected",
+      database: 'connected',
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      version: "1.0.0",
-      environment: process.env.NODE_ENV || "development"
+      version: '1.0.0',
+      environment: process.env.NODE_ENV || 'development',
     };
-    
+
     res.json(healthStatus);
   } catch (error) {
-    console.error("Health check failed:", error);
+    console.error('Health check failed:', error);
     res.status(503).json({
-      status: "unhealthy",
+      status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      error: "Database connection failed"
+      error: 'Database connection failed',
     });
   }
 });
 
 // Direct HTTP Endpoints for Arduino Devices
-router.get("/api/ping", (req: Request, res: Response) => {
-  res.json({ 
-    status: "ok", 
+router.get('/api/ping', (req: Request, res: Response) => {
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    message: "GPS Tracker Server is running"
+    message: 'GPS Tracker Server is running',
   });
 });
 
-router.get("/api/device/:deviceId/exists", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const exists = await storage.checkDeviceExists(deviceId);
-    res.json({ exists });
-  } catch (error) {
-    console.error("Device exists error:", error);
-    res.status(500).json({ error: "Internal server error" });
+router.get(
+  '/api/device/:deviceId/exists',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const exists = await storage.checkDeviceExists(deviceId);
+      res.json({ exists });
+    } catch (error) {
+      console.error('Device exists error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-});
+);
 
-router.post("/api/device/register", async (req: Request, res: Response) => {
+router.post('/api/device/register', async (req: Request, res: Response) => {
   try {
     const deviceData = {
       ...req.body,
       config: {
-        heartbeat_interval: 300000,     // 5 minuti (300 secondi)
-        gps_interval: 10000,           // 10 secondi (deprecated)
-        lost_mode_interval: 15000,     // 15 secondi in lost mode
+        heartbeat_interval: 300000, // 5 minuti (300 secondi)
+        gps_interval: 10000, // 10 secondi (deprecated)
+        lost_mode_interval: 15000, // 15 secondi in lost mode
         command_check_interval: 30000, // 30 secondi
-        low_battery_threshold: 15.0,   // 15%
-        gps_accuracy_threshold: 10.0   // 10 metri
-      }
+        low_battery_threshold: 15.0, // 15%
+        gps_accuracy_threshold: 10.0, // 10 metri
+      },
     };
-    
+
     const validatedData = insertDeviceSchema.parse(deviceData);
     const device = await storage.createDevice(validatedData);
-    
+
     await storage.addSystemLog({
       deviceId: device.id,
-      level: "info",
-      category: "system",
-      message: `Device registered with default config: ${device.deviceName} (${device.deviceId})`
+      level: 'info',
+      category: 'system',
+      message: `Device registered with default config: ${device.deviceName} (${device.deviceId})`,
     });
-    
+
     res.status(201).json(device);
   } catch (error) {
-    console.error("Device register error:", error);
-    res.status(400).json({ error: "Invalid device data" });
+    console.error('Device register error:', error);
+    res.status(400).json({ error: 'Invalid device data' });
   }
 });
 
-router.post("/api/device/:deviceId/location", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const locationData = {
-      deviceId: device.id,
-      latitude: String(req.body.latitude),
-      longitude: String(req.body.longitude),
-      altitude: req.body.altitude ? String(req.body.altitude) : null,
-      speed: req.body.speed ? String(req.body.speed) : null,
-      heading: req.body.heading ? String(req.body.heading) : null,
-      accuracy: req.body.accuracy ? String(req.body.accuracy) : null,
-      batteryLevel: req.body.batteryLevel || null,
-      signalQuality: req.body.signalQuality || null,
-      timestamp: new Date()
-    };
-    
-    const validatedLocation = insertDeviceLocationSchema.parse(locationData);
-    const location = await storage.addDeviceLocation(validatedLocation);
-    
-    // Aggiorna attività dispositivo tramite monitor
-    await deviceMonitor.updateDeviceActivity(deviceId);
-    
-    // Controlla geofencing automaticamente lato server
-    await checkGeofencing(device.id, parseFloat(req.body.latitude), parseFloat(req.body.longitude));
-    
-    res.status(201).json(location);
-  } catch (error) {
-    console.error("Device location error:", error);
-    res.status(400).json({ error: "Invalid location data" });
-  }
-});
+router.post(
+  '/api/device/:deviceId/location',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
 
-router.post("/api/device/:deviceId/heartbeat", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const { status, batteryLevel, signalQuality } = req.body;
-    
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    await deviceMonitor.updateDeviceActivity(deviceId);
-    
-    if (status) {
-      await storage.addStatusHistory({
+      const device = await storage.getDeviceByDeviceId(deviceId);
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      const locationData = {
         deviceId: device.id,
-        status,
-        batteryLevel: batteryLevel || null,
-        signalQuality: signalQuality || null
+        latitude: String(req.body.latitude),
+        longitude: String(req.body.longitude),
+        altitude: req.body.altitude ? String(req.body.altitude) : null,
+        speed: req.body.speed ? String(req.body.speed) : null,
+        heading: req.body.heading ? String(req.body.heading) : null,
+        accuracy: req.body.accuracy ? String(req.body.accuracy) : null,
+        batteryLevel: req.body.batteryLevel || null,
+        signalQuality: req.body.signalQuality || null,
+        timestamp: new Date(),
+      };
+
+      const validatedLocation = insertDeviceLocationSchema.parse(locationData);
+      const location = await storage.addDeviceLocation(validatedLocation);
+
+      // Aggiorna attività dispositivo tramite monitor
+      await deviceMonitor.updateDeviceActivity(deviceId);
+
+      // Controlla geofencing automaticamente lato server
+      await checkGeofencing(
+        device.id,
+        parseFloat(req.body.latitude),
+        parseFloat(req.body.longitude)
+      );
+
+      res.status(201).json(location);
+    } catch (error) {
+      console.error('Device location error:', error);
+      res.status(400).json({ error: 'Invalid location data' });
+    }
+  }
+);
+
+router.post(
+  '/api/device/:deviceId/heartbeat',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const { status, batteryLevel, signalQuality } = req.body;
+
+      const device = await storage.getDeviceByDeviceId(deviceId);
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      await deviceMonitor.updateDeviceActivity(deviceId);
+
+      if (status) {
+        await storage.addStatusHistory({
+          deviceId: device.id,
+          status,
+          batteryLevel: batteryLevel || null,
+          signalQuality: signalQuality || null,
+        });
+      }
+
+      // Recupera comandi pendenti insieme al heartbeat
+      const pendingCommands = await storage.getPendingCommandsByDevice(
+        device.id
+      );
+
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        config: device.config || {},
+        commands: pendingCommands,
       });
+    } catch (error) {
+      console.error('Device heartbeat error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    
-    // Recupera comandi pendenti insieme al heartbeat
-    const pendingCommands = await storage.getPendingCommandsByDevice(device.id);
-    
-    res.json({ 
-      success: true, 
-      timestamp: new Date().toISOString(),
-      config: device.config || {},
-      commands: pendingCommands
-    });
-  } catch (error) {
-    console.error("Device heartbeat error:", error);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
-
-router.get("/api/device/:deviceId/config", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    res.json({
-      config: device.config,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error) {
-    console.error("Device config error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/api/device/:deviceId/commands", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    // Get both pending commands and pending configurations
-    const commands = await storage.getPendingCommandsByDevice(device.id);
-    const pendingConfigs = await storage.getPendingConfigurationsByDevice(device.id);
-    
-    // Include pending configurations as commands
-    const allCommands = [
-      ...commands,
-      ...pendingConfigs.map(config => ({
-        id: config.id,
-        deviceId: config.deviceId,
-        commandType: "update_config" as const,
-        commandData: config.configData,
-        status: config.status,
-        createdAt: config.createdAt,
-        sentAt: config.sentAt,
-        executedAt: config.appliedAt
-      }))
-    ];
-    
-    res.json(allCommands);
-  } catch (error) {
-    console.error("Device commands error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+);
 
 router.post("/api/device/:deviceId/commands/:commandId/ack", async (req: Request, res: Response) => {
   try {
@@ -258,330 +220,472 @@ router.get("/api/devices/:deviceId/exists", isAuthenticated, async (req: Request
   }
 });
 
-router.post("/api/devices/register", async (req: Request, res: Response) => {
+router.post('/api/device/register', async (req: Request, res: Response) => {
   try {
-    const deviceData = insertDeviceSchema.parse(req.body);
-    
+    const deviceData = {
+      ...req.body,
+      config: {
+        heartbeat_interval: 300000, // 5 minuti (300 secondi * 1000ms)
+        gps_update_interval: 20000, // 20 secondi
+        lost_mode_gps_interval: 5000, // 5 secondi in lost mode
+        lost_mode_heartbeat: 15000, // 15 secondi in lost mode
+        command_check_interval: 30000, // 30 secondi
+        battery_threshold: 15.0, // 15% batteria bassa
+        power_save_mode: true,
+        sleep_interval: 60000, // 60 secondi
+        network_timeout: 30000, // 30 secondi
+        geofence_enabled: true,
+        geofence_radius: 100, // 100 metri
+        min_satellites: 4,
+        gps_accuracy_threshold: 10, // 10 metri
+        debug_mode: false,
+        log_level: 'INFO',
+        serial_baud_rate: 115200,
+      },
+    };
+
+    const validatedDevice = insertDeviceSchema.parse(deviceData);
+
     // Check if device already exists
-    const existingDevice = await storage.getDeviceByDeviceId(deviceData.deviceId);
+    const existingDevice = await storage.getDeviceByDeviceId(
+      validatedDevice.deviceId
+    );
+
     if (existingDevice) {
-      return res.status(409).json({ error: "Device already registered" });
+      // Update existing device with new data if needed
+      const updatedDevice = await storage.updateDevice(existingDevice.id, {
+        ...validatedDevice,
+        lastSeen: new Date(),
+        status: 'online',
+      });
+
+      await storage.addSystemLog({
+        deviceId: existingDevice.id,
+        level: 'info',
+        category: 'system',
+        message: 'Device re-registered',
+        metadata: { deviceData: validatedDevice },
+      });
+
+      return res.json(updatedDevice);
     }
-    
-    const device = await storage.createDevice(deviceData);
-    
-    // Log registration
+
+    // Create new device
+    const device = await storage.createDevice(validatedDevice);
+
     await storage.addSystemLog({
       deviceId: device.id,
-      level: "info",
-      category: "system",
-      message: `Device registered: ${device.deviceName || device.deviceId}`,
+      level: 'info',
+      category: 'system',
+      message: 'New device registered',
+      metadata: { deviceData: validatedDevice },
     });
-    
+
     res.status(201).json(device);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Invalid device data", details: error.errors });
+      return res
+        .status(400)
+        .json({ error: 'Invalid device data', details: error.errors });
     }
-    console.error("Device registration error:", error);
-    res.status(500).json({ error: "Registration failed" });
+    console.error('Device registration error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-router.get("/api/devices/:deviceId", async (req: Request, res: Response) => {
+router.get('/api/devices/:deviceId', async (req: Request, res: Response) => {
   try {
     const { deviceId } = req.params;
     const device = await storage.getDeviceByDeviceId(deviceId);
-    
+
     if (!device) {
-      return res.status(404).json({ error: "Device not found" });
+      return res.status(404).json({ error: 'Device not found' });
     }
-    
+
     res.json(device);
   } catch (error) {
-    console.error("Get device error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('Get device error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-router.get("/api/devices/:deviceId/config", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    res.json({ config: device.config });
-  } catch (error) {
-    console.error("Get device config error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+router.get(
+  '/api/devices/:deviceId/config',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
 
-router.put("/api/devices/:deviceId", async (req: Request, res: Response) => {
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Risposta standard che va bene per tutti
+      res.json({
+        config: device.config,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Get device config error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+router.put('/api/devices/:deviceId', async (req: Request, res: Response) => {
   try {
     const { deviceId } = req.params;
     const device = await storage.getDeviceByDeviceId(deviceId);
-    
+
     if (!device) {
-      return res.status(404).json({ error: "Device not found" });
+      return res.status(404).json({ error: 'Device not found' });
     }
-    
+
     const updatedDevice = await storage.updateDevice(device.id, req.body);
     res.json(updatedDevice);
   } catch (error) {
-    console.error("Update device error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('Update device error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-router.get("/api/devices", async (req: Request, res: Response) => {
+router.get('/api/devices', async (req: Request, res: Response) => {
   try {
     const devices = await storage.getAllDevices();
     res.json(devices);
   } catch (error) {
-    console.error("Get devices error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    console.error('Get devices error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
 // Device Status & Live Data APIs
-router.post("/api/devices/:deviceId/heartbeat", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const { batteryLevel, signalQuality, status, networkOperator } = req.body;
-    
-    // Update device status
-    await storage.updateDevice(device.id, {
-      status: status || "online",
-      lastSeen: new Date(),
-    });
-    
-    // Add status history if status changed
-    if (status && status !== device.status) {
-      await storage.addStatusHistory({
-        deviceId: device.id,
-        status,
-        previousStatus: device.status,
-        batteryLevel: batteryLevel ? String(batteryLevel) : null,
-        signalQuality: signalQuality ? Number(signalQuality) : null,
+router.post(
+  '/api/devices/:deviceId/heartbeat',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      const { batteryLevel, signalQuality, status, networkOperator } = req.body;
+
+      // Update device status
+      await storage.updateDevice(device.id, {
+        status: status || 'online',
+        lastSeen: new Date(),
       });
-    }
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Heartbeat error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
 
-router.get("/api/devices/:deviceId/status", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const latestLocation = await storage.getLatestLocation(device.id);
-    const unreadAlerts = await storage.getUnreadAlertsCount(device.id);
-    
-    res.json({
-      device,
-      latestLocation,
-      unreadAlertsCount: unreadAlerts,
-    });
-  } catch (error) {
-    console.error("Get device status error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/api/devices/:deviceId/location", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const locationData = insertDeviceLocationSchema.parse({
-      ...req.body,
-      deviceId: device.id,
-      timestamp: new Date(req.body.timestamp || Date.now()),
-    });
-    
-    const location = await storage.addDeviceLocation(locationData);
-    
-    // Update device last seen
-    await storage.updateDevice(device.id, { lastSeen: new Date() });
-    
-    // Check geofencing (simplified for now)
-    await checkGeofencing(device.id, parseFloat(locationData.latitude), parseFloat(locationData.longitude));
-    
-    res.status(201).json(location);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Invalid location data", details: error.errors });
-    }
-    console.error("Add location error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.get("/api/devices/:deviceId/history", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const limit = parseInt(req.query.limit as string) || 100;
-    const locations = await storage.getDeviceLocations(device.id, limit);
-    
-    res.json(locations);
-  } catch (error) {
-    console.error("Get device history error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Command System APIs
-router.get("/api/devices/:deviceId/commands", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const commands = await storage.getPendingCommandsByDevice(device.id);
-    res.json(commands);
-  } catch (error) {
-    console.error("Get commands error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/api/devices/:deviceId/commands", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const commandData = insertDeviceCommandSchema.parse({
-      ...req.body,
-      deviceId: device.id,
-    });
-    
-    // Check for existing pending commands of the same type (except for update_config)
-    if (commandData.commandType !== "update_config") {
-      const pendingCommands = await storage.getPendingCommandsByDevice(device.id);
-      const existingCommand = pendingCommands.find(cmd => 
-        cmd.commandType === commandData.commandType && cmd.status === 'pending'
-      );
-      
-      if (existingCommand) {
-        return res.status(400).json({ 
-          error: `${commandData.commandType} command already pending for this device`,
-          existingCommandId: existingCommand.id
+      // Add status history if status changed
+      if (status && status !== device.status) {
+        await storage.addStatusHistory({
+          deviceId: device.id,
+          status,
+          previousStatus: device.status,
+          batteryLevel: batteryLevel ? String(batteryLevel) : null,
+          signalQuality: signalQuality ? Number(signalQuality) : null,
         });
       }
-    } else {
-      // For update_config, cancel any existing pending config commands
-      const pendingCommands = await storage.getPendingCommandsByDevice(device.id);
-      const existingConfigCommands = pendingCommands.filter(cmd => 
-        cmd.commandType === "update_config" && cmd.status === 'pending'
-      );
-      
-      // Cancel existing config commands
-      for (const existingCmd of existingConfigCommands) {
-        await storage.updateCommandStatus(existingCmd.id, "cancelled");
-      }
-    }
-    
-    const command = await storage.createDeviceCommand(commandData);
-    
-    // For update_config commands, also save the configuration to the database
-    if (commandData.commandType === "update_config" && commandData.commandData) {
-      await storage.createDeviceConfiguration({
-        deviceId: device.id,
-        configData: commandData.commandData,
-        status: "pending",
-      });
-    }
-    
-    // Log command creation
-    await storage.addSystemLog({
-      deviceId: device.id,
-      level: "info",
-      category: "command",
-      message: `Command created: ${command.commandType}`,
-      metadata: { commandId: command.id },
-    });
-    
-    res.status(201).json(command);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Invalid command data", details: error.errors });
-    }
-    console.error("Create command error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
 
-router.post("/api/devices/:deviceId/commands/:commandId/ack", async (req: Request, res: Response) => {
-  try {
-    const { deviceId, commandId } = req.params;
-    const { status } = req.body;
-    
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Heartbeat error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    
-    // Try to update command status first
-    let success = await storage.updateCommandStatus(commandId, status);
-    
-    // If command not found, try configuration status
-    if (!success) {
-      success = await storage.updateConfigurationStatus(commandId, status === "executed" ? "applied" : status);
-    }
-    
-    if (!success) {
-      return res.status(404).json({ error: "Command or configuration not found" });
-    }
-    
-    // Return updated configuration
-    const updatedDevice = await storage.getDevice(device.id);
-    const response = {
-      success: true,
-      config: updatedDevice?.config || {},
-      timestamp: new Date().toISOString()
-    };
-    
-    res.json(response);
-  } catch (error) {
-    console.error("Command acknowledgment error:", error);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
+);
+
+router.get(
+  '/api/devices/:deviceId/status',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      const latestLocation = await storage.getLatestLocation(device.id);
+      const unreadAlerts = await storage.getUnreadAlertsCount(device.id);
+
+      res.json({
+        device,
+        latestLocation,
+        unreadAlertsCount: unreadAlerts,
+      });
+    } catch (error) {
+      console.error('Get device status error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+router.post(
+  '/api/devices/:deviceId/location',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      const locationData = insertDeviceLocationSchema.parse({
+        ...req.body,
+        deviceId: device.id,
+        timestamp: new Date(req.body.timestamp || Date.now()),
+      });
+
+      const location = await storage.addDeviceLocation(locationData);
+
+      // Update device last seen
+      await storage.updateDevice(device.id, { lastSeen: new Date() });
+
+      // Check geofencing (simplified for now)
+      await checkGeofencing(
+        device.id,
+        parseFloat(locationData.latitude),
+        parseFloat(locationData.longitude)
+      );
+
+      res.status(201).json(location);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ error: 'Invalid location data', details: error.errors });
+      }
+      console.error('Add location error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+router.get(
+  '/api/devices/:deviceId/history',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      const limit = parseInt(req.query.limit as string) || 100;
+      const locations = await storage.getDeviceLocations(device.id, limit);
+
+      res.json(locations);
+    } catch (error) {
+      console.error('Get device history error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// Command System APIs
+router.get(
+  '/api/devices/:deviceId/commands',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+
+      const device = await storage.getDeviceByDeviceId(deviceId);
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Get both pending commands and pending configurations
+      const commands = await storage.getPendingCommandsByDevice(device.id);
+      const pendingConfigs = await storage.getPendingConfigurationsByDevice(
+        device.id
+      );
+
+      // Include pending configurations as commands
+      const allCommands = [
+        ...commands,
+        ...pendingConfigs.map((config) => ({
+          id: config.id,
+          deviceId: config.deviceId,
+          commandType: 'update_config' as const,
+          commandData: config.configData,
+          status: config.status,
+          createdAt: config.createdAt,
+          sentAt: config.sentAt,
+          executedAt: config.appliedAt,
+        })),
+      ];
+
+      res.json(allCommands);
+    } catch (error) {
+      console.error('Device commands error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+router.post(
+  '/api/devices/:deviceId/commands',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      const commandData = {
+        deviceId: device.id,
+        userId: req.user?.id || null, // userId è opzionale
+        ...req.body,
+      };
+
+      // Check for pending commands
+      const pendingCommands = await storage.getPendingCommandsByDevice(
+        device.id
+      );
+      const hasPendingCommand = pendingCommands.some(
+        (cmd) =>
+          cmd.commandType === commandData.commandType &&
+          cmd.status === 'pending'
+      );
+
+      if (hasPendingCommand) {
+        return res.status(409).json({
+          error: 'Command already pending',
+          message:
+            'There is already a pending command of this type for this device',
+        });
+      }
+
+      const command = await storage.createDeviceCommand(commandData);
+
+      // Per update_config, aggiorna anche la config del device
+      if (
+        commandData.commandType === 'update_config' &&
+        commandData.commandData
+      ) {
+        await storage.createDeviceConfiguration({
+          deviceId: device.id,
+          configData: commandData.commandData,
+          status: 'pending',
+        });
+
+        // Aggiorna immediatamente la config del device nel database
+        await storage.updateDevice(device.id, {
+          config: commandData.commandData,
+        });
+
+        await storage.addSystemLog({
+          deviceId: device.id,
+          level: 'info',
+          category: 'config',
+          message: `Device configuration updated`,
+          metadata: {
+            commandId: command.id,
+            configKeys: Object.keys(commandData.commandData),
+            source: req.user?.id ? 'web_interface' : 'direct_api',
+          },
+        });
+      }
+
+      await storage.addSystemLog({
+        deviceId: device.id,
+        level: 'info',
+        category: 'command',
+        message: `Command created: ${command.commandType}`,
+        metadata: {
+          commandId: command.id,
+          source: req.user?.id ? 'web_interface' : 'direct_api',
+        },
+      });
+
+      res.status(201).json(command);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res
+          .status(400)
+          .json({ error: 'Invalid command data', details: error.errors });
+      }
+      console.error('Create command error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+router.post(
+  '/api/devices/:deviceId/commands/:commandId/ack',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId, commandId } = req.params;
+      const { status } = req.body;
+
+      const device = await storage.getDeviceByDeviceId(deviceId);
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Try to update command status first
+      let success = await storage.updateCommandStatus(commandId, status);
+
+      // If command not found, try configuration status
+      if (!success) {
+        success = await storage.updateConfigurationStatus(
+          commandId,
+          status === 'executed' ? 'applied' : status
+        );
+      }
+
+      if (!success) {
+        return res.status(404).json({ error: 'Command not found' });
+      }
+
+      // Se il comando è executed, conferma l'applicazione della config
+      if (status === 'executed') {
+        const commands = await storage.getPendingCommandsByDevice(device.id);
+        const command = commands.find((cmd) => cmd.id === commandId);
+
+        if (
+          command &&
+          command.commandType === 'update_config' &&
+          command.commandData
+        ) {
+          await storage.updateDevice(device.id, {
+            config: command.commandData,
+            updatedAt: new Date(),
+          });
+
+          await storage.addSystemLog({
+            deviceId: device.id,
+            level: 'info',
+            category: 'config',
+            message: `Configuration successfully applied by device`,
+            metadata: {
+              commandId: command.id,
+              appliedConfig: command.commandData,
+            } as Record<string, any>,
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        status: status,
+      });
+    } catch (error) {
+      console.error('Command ack error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
 
 // Geofence APIs
 router.get("/api/devices/:deviceId/geofences", async (req: Request, res: Response) => {
