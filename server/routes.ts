@@ -108,7 +108,30 @@ router.post(
 
       const device = await storage.getDeviceByDeviceId(deviceId);
       if (!device) {
-        return res.status(404).json({ error: 'Device not found' });
+        // ✅ INVECE DI 404, INVIA COMANDO REBOOT
+        console.log(
+          `Device ${deviceId} attempted location update but not found - sending reboot command`
+        );
+
+        return res.status(200).json({
+          success: false,
+          action: 'reboot',
+          reason: 'device_not_registered',
+          message:
+            'Device not found in database. Location not saved. Please reboot to re-register.',
+          commands: [
+            {
+              id: `reboot-${Date.now()}`,
+              commandType: 'reboot',
+              commandData: {
+                reason: 'device_not_registered',
+                delay: 10000, // 10 secondi di delay per permettere di finire invio GPS
+              },
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        });
       }
 
       const locationData = {
@@ -118,19 +141,19 @@ router.post(
         altitude: req.body.altitude ? String(req.body.altitude) : null,
         speed: req.body.speed ? String(req.body.speed) : null,
         heading: req.body.heading ? String(req.body.heading) : null,
-        accuracy: req.body.accuracy ? String(req.body.accuracy) : null,
+        satellites: req.body.satellites ? String(req.body.satellites) : null,
+        hdop: req.body.hdop ? String(req.body.hdop) : null,
         batteryLevel: req.body.batteryLevel || null,
         signalQuality: req.body.signalQuality || null,
+        networkOperator: req.body.networkOperator || null,
         timestamp: new Date(),
       };
 
       const validatedLocation = insertDeviceLocationSchema.parse(locationData);
       const location = await storage.addDeviceLocation(validatedLocation);
 
-      // Aggiorna attività dispositivo tramite monitor
       await deviceMonitor.updateDeviceActivity(deviceId);
 
-      // Controlla geofencing automaticamente lato server
       await checkGeofencing(
         device.id,
         parseFloat(req.body.latitude),
@@ -154,7 +177,30 @@ router.post(
 
       const device = await storage.getDeviceByDeviceId(deviceId);
       if (!device) {
-        return res.status(404).json({ error: 'Device not found' });
+        // ✅ INVECE DI 404, INVIA COMANDO REBOOT
+        console.log(
+          `Device ${deviceId} not found in database - sending reboot command`
+        );
+
+        return res.status(200).json({
+          success: false,
+          action: 'reboot',
+          reason: 'device_not_registered',
+          message:
+            'Device not found in database. Please reboot to re-register.',
+          commands: [
+            {
+              id: `reboot-${Date.now()}`,
+              commandType: 'reboot',
+              commandData: {
+                reason: 'device_not_registered',
+                delay: 5000, // 5 secondi di delay
+              },
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        });
       }
 
       await deviceMonitor.updateDeviceActivity(deviceId);
@@ -168,7 +214,6 @@ router.post(
         });
       }
 
-      // Recupera comandi pendenti insieme al heartbeat
       const pendingCommands = await storage.getPendingCommandsByDevice(
         device.id
       );
@@ -186,39 +231,46 @@ router.post(
   }
 );
 
-router.post("/api/device/:deviceId/commands/:commandId/ack", async (req: Request, res: Response) => {
-  try {
-    const { commandId } = req.params;
-    const { status } = req.body;
-    
-    const updated = await storage.updateCommandStatus(
-      commandId, 
-      status || "acknowledged",
-      new Date()
-    );
-    
-    if (!updated) {
-      return res.status(404).json({ error: "Command not found" });
+router.post(
+  '/api/device/:deviceId/commands/:commandId/ack',
+  async (req: Request, res: Response) => {
+    try {
+      const { commandId } = req.params;
+      const { status } = req.body;
+
+      const updated = await storage.updateCommandStatus(
+        commandId,
+        status || 'acknowledged',
+        new Date()
+      );
+
+      if (!updated) {
+        return res.status(404).json({ error: 'Command not found' });
+      }
+
+      res.json({ success: true, timestamp: new Date().toISOString() });
+    } catch (error) {
+      console.error('Proxy error - command ack:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    
-    res.json({ success: true, timestamp: new Date().toISOString() });
-  } catch (error) {
-    console.error("Proxy error - command ack:", error);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
+);
 
 // Device Registration & Discovery APIs (protected)
-router.get("/api/devices/:deviceId/exists", isAuthenticated, async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const exists = await storage.checkDeviceExists(deviceId);
-    res.json({ exists });
-  } catch (error) {
-    console.error("Check device exists error:", error);
-    res.status(500).json({ error: "Internal server error" });
+router.get(
+  '/api/devices/:deviceId/exists',
+  isAuthenticated,
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const exists = await storage.checkDeviceExists(deviceId);
+      res.json({ exists });
+    } catch (error) {
+      console.error('Check device exists error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-});
+);
 
 router.post('/api/device/register', async (req: Request, res: Response) => {
   try {
@@ -261,6 +313,7 @@ router.post('/api/device/register', async (req: Request, res: Response) => {
 
       await storage.addSystemLog({
         deviceId: existingDevice.id,
+        userId: req.user?.id || null, // userId è opzionale
         level: 'info',
         category: 'system',
         message: 'Device re-registered',
@@ -275,6 +328,7 @@ router.post('/api/device/register', async (req: Request, res: Response) => {
 
     await storage.addSystemLog({
       deviceId: device.id,
+      userId: req.user?.id || null, // userId è opzionale
       level: 'info',
       category: 'system',
       message: 'New device registered',
@@ -571,12 +625,6 @@ router.post(
         commandData.commandType === 'update_config' &&
         commandData.commandData
       ) {
-        await storage.createDeviceConfiguration({
-          deviceId: device.id,
-          configData: commandData.commandData,
-          status: 'pending',
-        });
-
         // Aggiorna immediatamente la config del device nel database
         await storage.updateDevice(device.id, {
           config: commandData.commandData,
@@ -686,78 +734,293 @@ router.post(
   }
 );
 
-
 // Geofence APIs
-router.get("/api/devices/:deviceId/geofences", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const geofences = await storage.getGeofencesByDevice(device.id);
-    res.json(geofences);
-  } catch (error) {
-    console.error("Get geofences error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+router.get(
+  '/api/devices/:deviceId/geofences',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
 
-router.post("/api/devices/:deviceId/geofences", async (req: Request, res: Response) => {
-  try {
-    const { deviceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
-    }
-    
-    const geofenceData = insertGeofenceSchema.parse({
-      ...req.body,
-      deviceId: device.id,
-    });
-    
-    const geofence = await storage.createGeofence(geofenceData);
-    
-    // Attiva monitoraggio GPS quando viene creata una geofence
-    await enableGeofenceMonitoring(device.id, deviceId);
-    
-    res.status(201).json(geofence);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Invalid geofence data", details: error.errors });
-    }
-    console.error("Create geofence error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
 
-router.delete("/api/devices/:deviceId/geofences/:geofenceId", async (req: Request, res: Response) => {
-  try {
-    const { deviceId, geofenceId } = req.params;
-    const device = await storage.getDeviceByDeviceId(deviceId);
-    
-    if (!device) {
-      return res.status(404).json({ error: "Device not found" });
+      const geofences = await storage.getGeofencesByDevice(device.id);
+      res.json(geofences);
+    } catch (error) {
+      console.error('Get geofences error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    
-    const success = await storage.deleteGeofence(geofenceId);
-    
-    if (!success) {
-      return res.status(404).json({ error: "Geofence not found" });
-    }
-    
-    // Verifica se disattivare il monitoraggio GPS
-    await disableGeofenceMonitoring(device.id, deviceId);
-    
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Delete geofence error:", error);
-    res.status(500).json({ error: "Internal server error" });
   }
-});
+);
+
+router.post(
+  '/api/devices/:deviceId/geofences',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Crea la geofence
+      const geofenceData = {
+        ...req.body,
+        deviceId: device.id,
+      };
+
+      const validatedGeofence = insertGeofenceSchema.parse(geofenceData);
+      const geofence = await storage.createGeofence(validatedGeofence);
+
+      // ✅ CONTROLLA SE È LA PRIMA GEOFENCE
+      const allGeofences = await storage.getGeofencesByDevice(device.id);
+      const isFirstGeofence = allGeofences.length === 1; // Appena creata
+
+      if (isFirstGeofence) {
+        // ✅ INVIA COMANDO AUTOMATICO enable_geofence_monitoring
+        try {
+          const command = await storage.createDeviceCommand({
+            deviceId: device.id,
+            commandType: 'enable_geofence_monitoring',
+            commandData: JSON.stringify({
+              interval: 30000, // 30 secondi fisso
+              reason: 'geofence_created',
+              geofenceId: geofence.id,
+            }),
+            status: 'pending',
+          });
+
+          // Log di sistema
+          await storage.addSystemLog({
+            deviceId: device.id,
+            level: 'info',
+            category: 'geofence',
+            message: `First geofence created - GPS monitoring enabled automatically (Command: ${command.id})`,
+            metadata: {
+              geofenceId: geofence.id,
+              commandId: command.id,
+              gpsInterval: 30000,
+            },
+          });
+
+          console.log(
+            `✅ Geofencing auto-enabled for device ${deviceId} - Command ${command.id} sent`
+          );
+
+          res.status(201).json({
+            ...geofence,
+            autoCommand: {
+              id: command.id,
+              type: 'enable_geofence_monitoring',
+              message: 'GPS monitoring automatically enabled',
+            },
+          });
+        } catch (commandError) {
+          console.error(
+            '❌ Error creating auto geofencing command:',
+            commandError
+          );
+
+          // Geofence creata comunque, ma comando fallito
+          res.status(201).json({
+            ...geofence,
+            warning:
+              'Geofence created but failed to enable GPS monitoring automatically',
+          });
+        }
+      } else {
+        // Non è la prima geofence, GPS già attivo
+        console.log(
+          `📍 Additional geofence created for device ${deviceId} - GPS already active`
+        );
+
+        res.status(201).json({
+          ...geofence,
+          message: 'Geofence added to existing monitoring',
+        });
+      }
+    } catch (error) {
+      console.error('Create geofence error:', error);
+      res.status(400).json({ error: 'Invalid geofence data' });
+    }
+  }
+);
+
+// ===== DELETE GEOFENCE - CON COMANDO AUTOMATICO =====
+router.delete(
+  '/api/geofences/:geofenceId',
+  async (req: Request, res: Response) => {
+    try {
+      const { geofenceId } = req.params;
+
+      // Trova la geofence da eliminare
+      const geofence = await storage.getGeofenceById(parseInt(geofenceId));
+      if (!geofence) {
+        return res.status(404).json({ error: 'Geofence not found' });
+      }
+
+      const device = await storage.getDeviceById(geofence.deviceId);
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // ✅ CONTROLLA QUANTE GEOFENCE RIMANGONO PRIMA DI ELIMINARE
+      const allGeofences = await storage.getGeofencesByDevice(
+        geofence.deviceId
+      );
+      const isLastGeofence = allGeofences.length === 1; // Solo quella da eliminare
+
+      // Elimina la geofence
+      const success = await storage.deleteGeofence(parseInt(geofenceId));
+      if (!success) {
+        return res.status(404).json({ error: 'Failed to delete geofence' });
+      }
+
+      if (isLastGeofence) {
+        // ✅ INVIA COMANDO AUTOMATICO disable_geofence_monitoring
+        try {
+          const command = await storage.createDeviceCommand({
+            deviceId: geofence.deviceId,
+            commandType: 'disable_geofence_monitoring',
+            commandData: JSON.stringify({
+              reason: 'last_geofence_deleted',
+              deletedGeofenceId: geofence.id,
+            }),
+            status: 'pending',
+          });
+
+          // Log di sistema
+          await storage.addSystemLog({
+            deviceId: geofence.deviceId,
+            level: 'info',
+            category: 'geofence',
+            message: `Last geofence deleted - GPS monitoring disabled automatically (Command: ${command.id})`,
+            metadata: {
+              deletedGeofenceId: geofence.id,
+              commandId: command.id,
+            },
+          });
+
+          console.log(
+            `✅ Geofencing auto-disabled for device ${device.deviceId} - Command ${command.id} sent`
+          );
+
+          res.json({
+            success: true,
+            message: 'Last geofence deleted - GPS monitoring disabled',
+            autoCommand: {
+              id: command.id,
+              type: 'disable_geofence_monitoring',
+              message: 'GPS monitoring automatically disabled',
+            },
+          });
+        } catch (commandError) {
+          console.error(
+            '❌ Error creating auto disable command:',
+            commandError
+          );
+
+          res.json({
+            success: true,
+            warning:
+              'Geofence deleted but failed to disable GPS monitoring automatically',
+          });
+        }
+      } else {
+        // Non è l'ultima geofence, GPS rimane attivo
+        console.log(
+          `📍 Geofence deleted for device ${device.deviceId} - GPS remains active for other zones`
+        );
+
+        res.json({
+          success: true,
+          message:
+            'Geofence deleted - GPS monitoring continues for remaining zones',
+        });
+      }
+    } catch (error) {
+      console.error('Delete geofence error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+// ===== HELPER FUNCTION - FORZA SYNC GEOFENCING =====
+router.post(
+  '/api/devices/:deviceId/sync-geofencing',
+  async (req: Request, res: Response) => {
+    try {
+      const { deviceId } = req.params;
+      const device = await storage.getDeviceByDeviceId(deviceId);
+
+      if (!device) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Conta geofence attive
+      const geofences = await storage.getGeofencesByDevice(device.id);
+      const hasGeofences = geofences.length > 0;
+
+      if (hasGeofences) {
+        // Forza enable se ci sono geofence
+        const command = await storage.createDeviceCommand({
+          deviceId: device.id,
+          commandType: 'enable_geofence_monitoring',
+          commandData: JSON.stringify({
+            interval: 30000,
+            reason: 'manual_sync',
+            geofenceCount: geofences.length,
+          }),
+          status: 'pending',
+        });
+
+        await storage.addSystemLog({
+          deviceId: device.id,
+          level: 'info',
+          category: 'geofence',
+          message: `Manual geofencing sync - GPS enabled for ${geofences.length} zones`,
+          metadata: { commandId: command.id, geofenceCount: geofences.length },
+        });
+
+        res.json({
+          success: true,
+          action: 'enabled',
+          geofenceCount: geofences.length,
+          commandId: command.id,
+        });
+      } else {
+        // Forza disable se non ci sono geofence
+        const command = await storage.createDeviceCommand({
+          deviceId: device.id,
+          commandType: 'disable_geofence_monitoring',
+          commandData: JSON.stringify({ reason: 'manual_sync' }),
+          status: 'pending',
+        });
+
+        await storage.addSystemLog({
+          deviceId: device.id,
+          level: 'info',
+          category: 'geofence',
+          message: 'Manual geofencing sync - GPS disabled (no zones)',
+          metadata: { commandId: command.id },
+        });
+
+        res.json({
+          success: true,
+          action: 'disabled',
+          geofenceCount: 0,
+          commandId: command.id,
+        });
+      }
+    } catch (error) {
+      console.error('Sync geofencing error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
 
 // Lost Mode APIs
 router.post("/api/devices/:deviceId/lost-mode", async (req: Request, res: Response) => {

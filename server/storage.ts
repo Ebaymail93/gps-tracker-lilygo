@@ -289,68 +289,6 @@ export class DatabaseStorage implements IStorage {
     return result?.count || 0;
   }
 
-  // Device Configuration operations
-  async createDeviceConfiguration(insertConfig: InsertDeviceConfiguration): Promise<DeviceConfiguration> {
-    // Check if there's already a pending configuration for this device
-    const existingPending = await db
-      .select()
-      .from(deviceConfigurations)
-      .where(and(
-        eq(deviceConfigurations.deviceId, insertConfig.deviceId),
-        eq(deviceConfigurations.status, "pending")
-      ))
-      .limit(1);
-
-    if (existingPending.length > 0) {
-      // Update existing pending configuration
-      const [config] = await db
-        .update(deviceConfigurations)
-        .set({
-          configData: insertConfig.configData,
-          createdAt: new Date(),
-          sentAt: new Date() // Set sent_at when creating/updating
-        })
-        .where(eq(deviceConfigurations.id, existingPending[0].id))
-        .returning();
-      return config;
-    } else {
-      // Create new configuration
-      const [config] = await db
-        .insert(deviceConfigurations)
-        .values({
-          ...insertConfig,
-          sentAt: new Date() // Set sent_at when creating
-        })
-        .returning();
-      return config;
-    }
-  }
-
-  async getPendingConfigurationsByDevice(deviceId: string): Promise<DeviceConfiguration[]> {
-    return await db
-      .select()
-      .from(deviceConfigurations)
-      .where(and(
-        eq(deviceConfigurations.deviceId, deviceId),
-        eq(deviceConfigurations.status, "pending")
-      ))
-      .orderBy(desc(deviceConfigurations.createdAt));
-  }
-
-  async updateConfigurationStatus(configId: string, status: string, timestamp?: Date): Promise<boolean> {
-    const updateData: any = { status };
-    
-    if (status === "sent") updateData.sentAt = timestamp || new Date();
-    if (status === "applied") updateData.appliedAt = timestamp || new Date();
-
-    const result = await db
-      .update(deviceConfigurations)
-      .set(updateData)
-      .where(eq(deviceConfigurations.id, configId));
-
-    return result.rowCount !== null && result.rowCount > 0;
-  }
-
   async getLatestConfiguration(deviceId: string): Promise<DeviceConfiguration | undefined> {
     const [config] = await db
       .select()
