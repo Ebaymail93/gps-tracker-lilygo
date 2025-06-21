@@ -263,9 +263,6 @@ export type InsertGeofence = z.infer<typeof insertGeofenceSchema>;
 export type GeofenceAlert = typeof geofenceAlerts.$inferSelect;
 export type InsertGeofenceAlert = z.infer<typeof insertGeofenceAlertSchema>;
 
-export type DeviceConfiguration = typeof deviceConfigurations.$inferSelect;
-export type InsertDeviceConfiguration = z.infer<typeof insertDeviceConfigurationSchema>;
-
 export type SystemLog = typeof systemLogs.$inferSelect;
 export type InsertSystemLog = z.infer<typeof insertSystemLogSchema>;
 
